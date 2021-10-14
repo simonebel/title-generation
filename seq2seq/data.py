@@ -78,10 +78,6 @@ def generate_data_loader(batch_size, train_path, dev_path, test_path, tokenizer)
     dev_df = pkl.load(open(dev_path, "rb"))
     test_df = pkl.load(open(test_path, "rb"))
 
-    train_df = train_df.head(512)
-    dev_df = dev_df.head(64)
-    test_df = test_df.head(64)
-
     train_dataset = build_dataset(
         train_df["abstract"].to_numpy(), train_df["title"].to_numpy()
     )

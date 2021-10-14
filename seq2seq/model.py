@@ -1,18 +1,10 @@
-from tokenizers import Tokenizer
-
-import pandas as pd
 import numpy as np
-import pickle as pkl
-import plotly.graph_objects as go
+import json
 
 import torch
-from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from torch import nn
 
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from torch.nn.utils import clip_grad_norm_
-
-from sacrebleu.metrics import BLEU, CHRF, TER
 
 
 class Seq2seqConfig:
@@ -34,11 +26,19 @@ class Seq2seqConfig:
         self.maxout_hidden_size = maxout_hidden_size
         self.padding_idx = padding_idx
         self.start_idx = start_idx
-        self.vocab_size = vocab_size
         self.vocab_file = vocab_file
+        if self.vocab_file is not None:
+            self.vocab_size = self.get_vocab_size(self.vocab_file)
+        else:
+            self.vocab_size = vocab_size
         self.layer_norm_eps = layer_norm_eps
         self.embedding_p_dropout = embedding_p_dropout
         self.device = device
+
+    @staticmethod
+    def get_vocab_size(vocab_file):
+        vocab = json.load(open(vocab_file, "r"))
+        return len(vocab["model"]["vocab"])
 
 
 class Embedding(nn.Module):
@@ -69,6 +69,19 @@ class Encoder(nn.Module):
         )
         self.fc = nn.Linear(config.hidden_size, config.hidden_size)
         self.dropout = nn.Dropout(config.embedding_p_dropout)
+        self._init_weights()
+
+    def _init_weights(
+        self,
+    ):
+        for name, param in self.rnn.named_parameters():
+            if "weight" in name:
+                nn.init.orthogonal_(param)
+            if "bias" in name:
+                nn.init.zeros_(param)
+
+        self.fc.weight.data.normal_(mean=0.0, std=0.01)
+        self.fc.bias.data.zero_()
 
     def forward(self, source_embedding, source_true_seq_length):
 
@@ -99,6 +112,14 @@ class AdditiveAttention(nn.Module):
         self.U_a = nn.Linear(config.hidden_size * 2, config.hidden_size)  # Value
         self.W_a = nn.Linear(config.hidden_size, config.hidden_size)  # Query
         self.softmax = nn.Softmax(dim=1)
+        self._init_weights()
+
+    def _init_weights(self):
+        self.v.data.zero_()
+        self.U_a.weight.data.normal_(mean=0.0, std=0.001)
+        self.W_a.weight.data.normal_(mean=0.0, std=0.001)
+        self.U_a.bias.data.zero_()
+        self.W_a.bias.data.zero_()
 
     def forward(
         self, encoder_output, last_decoder_output, src_attention_mask
@@ -126,6 +147,19 @@ class Decoder(nn.Module):
         self.rnnUnit = nn.LSTM(config.hidden_size, config.hidden_size, batch_first=True)
         self.fc_word = nn.Linear(config.embedding_size, config.hidden_size)
         self.fc_context = nn.Linear(config.hidden_size * 2, config.hidden_size)
+        self._init_weights()
+
+    def _init_weights(self):
+        self.fc_word.weight.data.normal_(mean=0.0, std=0.01)
+        self.fc_word.bias.data.zero_()
+        self.fc_context.weight.data.normal_(mean=0.0, std=0.01)
+        self.fc_context.bias.data.zero_()
+
+        for name, param in self.rnnUnit.named_parameters():
+            if "weight" in name:
+                nn.init.orthogonal_(param)
+            if "bias" in name:
+                nn.init.zeros_(param)
 
     def forward(self, w_embedding, context_vector, last_hidden, last_cell_state):
 
@@ -159,9 +193,19 @@ class Seq2seq(nn.Module):
 
         self.dropout = nn.Dropout(config.embedding_p_dropout)
         self.LayerNorm = nn.LayerNorm(config.embedding_size, config.layer_norm_eps)
-        self.linear = nn.Linear(config.hidden_size, config.vocab_size, bias=True)
         self.config = config
         self.device = device
+        self._init_weight()
+
+    def _init_weight(self):
+        self.fc_dec_hid.weight.data.normal_(mean=0.0, std=0.01)
+        self.fc_dec_hid.bias.data.zero_()
+        self.fc_w_emb.weight.data.normal_(mean=0.0, std=0.01)
+        self.fc_w_emb.bias.data.zero_()
+        self.fc_context.weight.data.normal_(mean=0.0, std=0.01)
+        self.fc_context.bias.data.zero_()
+        self.fc_maxout.weight.data.normal_(mean=0.0, std=0.01)
+        self.fc_maxout.bias.data.zero_()
 
     def forward(
         self,
@@ -217,15 +261,10 @@ class Seq2seq(nn.Module):
                 decoder_input = target_embedding[:, idx].unsqueeze(1)
 
             else:
+                print(prediction_ids)
                 decoder_input = self.word_embeddings(prediction_ids)
 
         return predictions
-
-
-@torch.no_grad()
-def init_weights(m):
-    for param in m.parameters():
-        nn.init.uniform_(param.data, -0.08, 0.08)
 
 
 def count_parameters(model):

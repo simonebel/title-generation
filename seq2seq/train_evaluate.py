@@ -1,14 +1,11 @@
-from tokenizers import Tokenizer
-
 import numpy as np
+import math
+
 import plotly.graph_objects as go
 
 import torch
-
 from torch.nn.utils import clip_grad_norm_
-
-from sacrebleu.metrics import BLEU
-import math
+from rouge_score import rouge_scorer
 
 
 def train(
@@ -127,7 +124,7 @@ def evaluate(
     model, device, tokenizer, dev_data_loader, config, loss_fn, beam_size, batch_size
 ):
 
-    epoch_loss, epoch_bleu, nb_dev_steps = 0, 0, 0
+    epoch_loss, epoch_rouge, nb_dev_steps = 0, 0, 0
     model.eval()
     with torch.no_grad():
         for (
@@ -178,37 +175,39 @@ def evaluate(
             print(candidates_ids)
             print(detokenize_candidates)
 
-            bleu_score = compute_bleu_score_on_batch(
+            rouge_score = compute_rouge_score_on_minibatch(
                 detokenize_candidates, ground_truth_target, beam_size
             )
             epoch_loss += loss.item()
-            epoch_bleu += bleu_score
+            epoch_rouge += rouge_score
             nb_dev_steps += 1
 
-    return epoch_loss / nb_dev_steps, epoch_bleu / nb_dev_steps
+    return epoch_loss / nb_dev_steps, epoch_rouge / nb_dev_steps
 
 
-def compute_bleu_score_on_batch(hyp, ref, beam_size):
-    bleu = BLEU()
-    bleu_score = []
-    ref = [ref]
-    hyp = np.array(hyp)
-    for index in range(beam_size):
-        batch_hyp = hyp[:, index]
-        batch_hyp = list(batch_hyp)
+def compute_rouge_score_on_minibatch(hyps, refs, beam_size):
 
-        partial_bleu = bleu.corpus_score(batch_hyp, ref)
-        bleu_score.append(partial_bleu.score)
+    scorer = rouge_scorer.RougeScorer(["rouge1", "rougeL"])
+    rouge_score = []
+    for idc, ref in enumerate(refs):
+        bean_hyp = hyps[idc]
+        partial_rougeL = 0
+        for hyp in bean_hyp:
+            rouges = scorer.score(ref, hyp)
+            rougeL = rouges["rougeL"].fmeasure
+            partial_rougeL += rougeL
 
-    return np.mean(bleu_score)
+        rouge_score.append(partial_rougeL / len(bean_hyp))
+
+    return np.mean(rouge_score)
 
 
-def plot_loss(train_loss_set, dev_loss_set, dev_bleu_set):
+def plot_loss(train_loss_set, dev_loss_set, dev_bleu_set, epochs):
 
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            x=[i for i in range(len(train_loss_set))],
+            x=[i for i in range(1, len(train_loss_set) + 1)],
             y=train_loss_set,
             mode="lines+markers",
             name="Train Loss",
@@ -217,7 +216,7 @@ def plot_loss(train_loss_set, dev_loss_set, dev_bleu_set):
 
     fig.add_trace(
         go.Scatter(
-            x=[i for i in range(len(dev_loss_set))],
+            x=[i for i in range(1, len(dev_loss_set) + 1)],
             y=dev_loss_set,
             mode="lines+markers",
             name="Validation Loss",
@@ -226,23 +225,23 @@ def plot_loss(train_loss_set, dev_loss_set, dev_bleu_set):
     fig.update_layout(
         xaxis_title="Epochs",
         yaxis_title="Loss Function",
-        title="Evolution of the Loss Function during 8 epochs",
+        title=f"Evolution of the Loss Function during {epochs} epochs",
         title_x=0.5,
     )
 
     fig2 = go.Figure()
     fig2.add_trace(
         go.Scatter(
-            x=[i for i in range(len(dev_bleu_set))],
+            x=[i for i in range(1 + len(dev_bleu_set) + 1)],
             y=dev_bleu_set,
             mode="lines+markers",
-            name="Developpement BLEU Score",
+            name="Developpement ROUGE Score",
         )
     )
     fig2.update_layout(
         xaxis_title="Epochs",
         yaxis_title="BLEU Score",
-        title="Evolution of the BLEU Score during 8 epochs",
+        title=f"Evolution of the ROUGE Score during {epochs} epochs",
         title_x=0.5,
     )
     fig.show()
