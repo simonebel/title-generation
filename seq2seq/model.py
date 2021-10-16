@@ -111,11 +111,10 @@ class AdditiveAttention(nn.Module):
         self.v = nn.parameter.Parameter(torch.zeros(1, config.hidden_size))
         self.U_a = nn.Linear(config.hidden_size * 2, config.hidden_size)  # Value
         self.W_a = nn.Linear(config.hidden_size, config.hidden_size)  # Query
-        self.softmax = nn.Softmax(dim=1)
+        self.softmax = nn.Softmax(dim=2)
         self._init_weights()
 
     def _init_weights(self):
-        self.v.data.zero_()
         self.U_a.weight.data.normal_(mean=0.0, std=0.001)
         self.W_a.weight.data.normal_(mean=0.0, std=0.001)
         self.U_a.bias.data.zero_()
@@ -130,13 +129,11 @@ class AdditiveAttention(nn.Module):
 
         energy = torch.matmul(self.v, torch.tanh(Q + V).transpose(1, 2))
         energy.masked_fill_(src_attention_mask.unsqueeze(1) == 0, -1e10)
-
         probs = self.softmax(energy)
 
         # weigted = [batch size, 1, hid dim * 2]
         weigted = torch.sum((probs.transpose(1, 2) * encoder_output), dim=1)
         weigted = weigted.unsqueeze(1)
-
         return weigted
 
 
@@ -193,6 +190,7 @@ class Seq2seq(nn.Module):
 
         self.dropout = nn.Dropout(config.embedding_p_dropout)
         self.LayerNorm = nn.LayerNorm(config.embedding_size, config.layer_norm_eps)
+        self.soft = nn.Softmax(dim=2)
         self.config = config
         self.device = device
         self._init_weight()
@@ -237,10 +235,10 @@ class Seq2seq(nn.Module):
         last_cell_state = last_cell_state.unsqueeze(0)
 
         for idx in range(1, seq_length):
-
             context = self.attention(
                 encoder_outputs, decoder_output, src_attention_mask
             )
+
             decoder_output, last_hidden, last_cell_state = self.decoder(
                 decoder_input, context, last_hidden, last_cell_state
             )
@@ -253,6 +251,7 @@ class Seq2seq(nn.Module):
                 batch_size, 1, self.config.maxout_hidden_size, 2
             )
             maxout = deep_output.max(dim=3).values
+
             prediction = self.fc_maxout(maxout)
             prediction_ids = prediction.argmax(2).squeeze(0)
             predictions[:, idx] = prediction.squeeze(1)
@@ -261,10 +260,13 @@ class Seq2seq(nn.Module):
                 decoder_input = target_embedding[:, idx].unsqueeze(1)
 
             else:
-                print(prediction_ids)
                 decoder_input = self.word_embeddings(prediction_ids)
 
         return predictions
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 def count_parameters(model):

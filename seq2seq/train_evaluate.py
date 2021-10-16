@@ -172,7 +172,6 @@ def evaluate(
             detokenize_candidates, ground_truth_target = detokenize_candidate_target(
                 tokenizer, predictions.size()[0], candidates_ids, target_ids
             )
-            print(candidates_ids)
             print(detokenize_candidates)
 
             rouge_score = compute_rouge_score_on_minibatch(
