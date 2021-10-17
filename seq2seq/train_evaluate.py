@@ -184,6 +184,67 @@ def evaluate(
     return epoch_loss / nb_dev_steps, epoch_rouge / nb_dev_steps
 
 
+def test(
+    model, device, args, tokenizer, test_data_loader, config, beam_size, batch_size
+):
+
+    _, model = load_checkpoint(args.checkpoint_file, model)
+    epoch_rouge, nb_test_steps = 0, 0
+    model.eval()
+    with torch.no_grad():
+        for (
+            source_ids,
+            src_attention_mask,
+            target_ids,
+            trg_attention_mask,
+            source_true_seq_length,
+            target_true_seq_length,
+        ) in test_data_loader:
+            source_ids, src_attention_mask, target_ids, trg_attention_mask = (
+                source_ids.to(device),
+                src_attention_mask.to(device),
+                target_ids.to(device),
+                trg_attention_mask.to(device),
+            )
+            source_true_seq_length, target_true_seq_length = (
+                source_true_seq_length.cpu().detach(),
+                target_true_seq_length.cpu().detach(),
+            )
+            predictions = model(
+                source_ids,
+                src_attention_mask,
+                target_ids,
+                trg_attention_mask,
+                source_true_seq_length,
+            )
+
+            target_ids = target_ids[:, 1:]
+            predictions = predictions[:, 1:]
+
+            flat_target_ids = target_ids.reshape(-1)
+            flat_predictions = predictions.reshape(-1, config.vocab_size)
+
+            candidates_ids = left_to_right_beam_search_decoder(
+                predictions,
+                beam_size,
+                predictions.size()[1],
+                predictions.size()[0],
+                config,
+            )
+            detokenize_candidates, ground_truth_target = detokenize_candidate_target(
+                tokenizer, predictions.size()[0], candidates_ids, target_ids
+            )
+            print(detokenize_candidates)
+
+            rouge_score = compute_rouge_score_on_minibatch(
+                detokenize_candidates, ground_truth_target, beam_size
+            )
+            epoch_rouge += rouge_score
+            nb_test_steps += 1
+
+    return epoch_rouge / nb_test_steps
+
+
 def compute_rouge_score_on_minibatch(hyps, refs, beam_size):
 
     scorer = rouge_scorer.RougeScorer(["rouge1", "rougeL"])
