@@ -272,3 +272,49 @@ def plot_lr_vs_accuracy(lr_train_set, dev_bleu_set):
     fig.update_xaxes(type="log")
 
     fig.show()
+
+
+class Arguments:
+    def __init__(self, batch_size, lr, clip, epochs, beam_size):
+
+        self.batch_size = batch_size
+        self.lr = lr
+        self.clip = clip
+        self.epochs = epochs
+        self.beam_size = beam_size
+        self.checkpoint_file = "./seq2seq/seq2seq_checkpoint.pt"
+
+        self.set_state()
+
+    def set_state(self):
+        self.state = {
+            "train_loss_set": [],
+            "dev_loss_set": [],
+            "dev_rouge_set": [],
+            "state_epoch": 0,
+        }
+
+    def update_state(self, train_loss, dev_loss, dev_rouge, epoch):
+
+        self.state["train_loss_set"].append(train_loss)
+        self.state["dev_loss_set"].append(dev_loss)
+        self.state["dev_rouge_set"].append(dev_rouge)
+        self.state["state_epoch"] = epoch
+
+
+def save_checkpoint(args, model):
+    params = {
+        "args": args,
+        "state_dict": model.state_dict(),
+    }
+    torch.save(params, args.checkpoint_file)
+
+
+def load_checkpoint(filename, model):
+
+    saved_params = torch.load(filename, map_location=lambda storage, loc: storage)
+    args = saved_params["args"]
+    state_dict = saved_params["state_dict"]
+    model.load_state_dict(state_dict)
+
+    return args, model
