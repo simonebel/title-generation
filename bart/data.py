@@ -1,6 +1,3 @@
-from transformers import BartTokenizerFast, BartForConditionalGeneration
-
-import pandas as pd
 import numpy as np
 import pickle as pkl
 
@@ -37,6 +34,7 @@ def batchify_feature(batch, tokenizer):
 
     source = source.tolist()
     target = target.tolist()
+    len_vect = np.vectorize(len)
     source_encoding = tokenizer(source)["input_ids"]
     target_encoding = tokenizer(target)["input_ids"]
 

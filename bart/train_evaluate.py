@@ -1,13 +1,9 @@
-from tokenizers import Tokenizer
-
-import numpy as np
-import plotly.graph_objects as go
+import math
 
 import torch
-
 from torch.nn.utils import clip_grad_norm_
-from seq2seq import plot_loss, compute_rouge_score_on_minibatch
-import math
+
+from seq2seq import compute_rouge_score_on_minibatch
 
 
 def train(
