@@ -1,0 +1,13 @@
+name: seq2seq
+channels:
+  - defaults
+  - anaconda
+dependencies:
+  - python=3.8
+  - pip : 
+    - numpy
+    - torch
+    - pandas
+    - transformers
+    - plotly
+    - rouge_score
